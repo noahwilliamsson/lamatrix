@@ -1,0 +1,23 @@
+{
+  "ssid":"yourWiFiSSID",
+  "password":"yourWiFiPassword",
+  "port": "/dev/ttyACM0",
+  "baudrate": 921600,
+  "tzOffsetSeconds": 3600,
+  "AnimationScene": {
+    "files": [
+      "animations/game-pingpong.json",
+      "animations/matrix.json",
+      "animations/newyears.json",
+      "animations/tv-movie.json"
+    ]
+  },
+  "ClockScene": {
+  },
+  "DemoScene": {
+  },
+  "WeatherScene": {
+    "lat": 59.3293,
+    "lon": 18.0686
+  }
+}

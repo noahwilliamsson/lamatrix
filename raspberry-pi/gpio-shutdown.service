@@ -1,0 +1,11 @@
+[Unit]
+Description=Shutdown Pi when GPIO 5 is tied to ground
+After=network.target
+
+[Service]
+ExecStart=/home/pi/lamatrix/raspberry-pi/gpio-shutdown.py
+User=pi
+Group=pi
+
+[Install]
+WantedBy=basic.target

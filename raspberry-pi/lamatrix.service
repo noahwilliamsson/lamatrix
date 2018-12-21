@@ -1,0 +1,15 @@
+[Unit]
+Description=Run LaMatrix main loop
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/env python /home/pi/lamatrix/main.py
+WorkingDirectory=/home/pi/lamatrix
+StandardOutput=null
+Restart=on-failure
+RestartSec=60s
+User=pi
+Group=pi
+
+[Install]
+WantedBy=basic.target
