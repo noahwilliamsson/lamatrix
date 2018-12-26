@@ -11,53 +11,73 @@
 # From https://raw.githubusercontent.com/Gadgetoid/wipy-WS2812/master/ws2812alt.py
 # ..via: https://forum.pycom.io/topic/2214/driving-ws2812-neopixel-led-strip/3
 from ws2812 import WS2812
-#from rmt import WS2812
-from machine import Pin, RTC, UART, idle
+from machine import Pin, RTC, UART
 import utime
 import os
 import sys
 import pycom
 import gc
 
-# Local imports
-from clockscene import ClockScene
-from weatherscene import WeatherScene
-
 class PycomHAL:
 	def __init__(self, config):
 		self.chain = None   # will be initialized in reset()
 		self.num_pixels = 256
-		self.pixels = []
 		self.reset()
 		self.enable_auto_time = True
-		self.frame = 0
-		# TODO: Fix these
-		self.scene = 0
-		self.clock = None
-		self.weather = None
-		self.config = config
 		# A Raspberry Pi will reboot/wake up if this pin is set low
 		# https://docs.pycom.io/firmwareapi/pycom/machine/pin.html#pinholdhold
 		self.suspend_host_pin = Pin('P8', Pin.OUT, Pin.PULL_UP)
 		self.suspend_host_pin.hold(True)
 		# Handle button input
-		self.button_pin = Pin('P12', Pin.IN, Pin.PULL_UP)
-		self.button_pin.callback(Pin.IRQ_FALLING|Pin.IRQ_RISING, handler=lambda arg: self.button_irq(arg))
+		self.left_button = Pin('P9', Pin.IN, Pin.PULL_UP)
+		self.left_button.callback(Pin.IRQ_FALLING|Pin.IRQ_RISING, handler=lambda arg: self.button_irq(arg))
+		self.right_button = Pin('P10', Pin.IN, Pin.PULL_UP)
+		self.right_button.callback(Pin.IRQ_FALLING|Pin.IRQ_RISING, handler=lambda arg: self.button_irq(arg))
+		print('PycomHAL: left button {}, right button {}'.format(self.left_button.value(), self.right_button.value()))
 		self.button_state = 0
 		self.button_down_t = 0
 		# Setup RTC
 		self.rtc = None
-		self.set_rtc(0)
 		utime.timezone(config['tzOffsetSeconds'])
 		pycom.heartbeat(False)
-		gc.collect()
+		# Free resources
+		if self.left_button.value() and self.right_button.value():
+			self.disable_stuff()
 
 		# For the serial bridge implementation
-		self.uart = None  # will be initialized in serial_loop()
+		self.uart = None
+		self.console = None
+		gc.collect()
+		self.rxbuf = bytearray(256)
+		self.reconfigure_uarts(config)
+		# Needed for maintaining the serial protocol state
 		self.reboot_at = 0
 		self.state = 0
 		self.acc = 0
 		self.color = 0
+		gc.collect()
+
+	def disable_stuff(self):
+		from network import Bluetooth, Server
+		bluetooth = Bluetooth()
+		bluetooth.deinit()
+		# Disable FTP server unless button is pressed during startup
+		server = Server()
+		server.deinit()
+		print('PycomHAL: FTP server disabled (hold any button during startup to enable)')
+
+	def reconfigure_uarts(self, config):
+		"""
+		Reconfigure UARTs to make
+		- UART 0 become the one we can be controlled by via USB serial
+		- UART 1 the console (print output and REPL)
+		"""
+		self.uart = UART(0, config['baudrate'], pins=('P1', 'P0', 'P20', 'P19'))  # TX/RX/RTS/CTS on ExpBoard2
+		self.console = UART(1, 115200)
+		if not config or not 'remapConsole' in config or config['remapConsole']:
+			print('HAL: Disabling REPL on UART0 and switching to serial protocol')
+			os.dupterm(self.console)
+			print('HAL: Enabled REPL on UART1')
 
 	def button_irq(self, pin):
 		"""
@@ -69,16 +89,27 @@ class PycomHAL:
 			return
 		if not self.button_down_t:
 			return
+
 		t = utime.ticks_ms() - self.button_down_t
-		if t > 500:
-			self.button_state = 2
+		shift = 0 if pin == self.left_button else 4
+		if t > 1500:
+			self.button_state |= 1<<(shift+2)
+		elif t > 500:
+			self.button_state |= 1<<(shift+1)
 		elif t > 80:
-			self.button_state = 1
+			self.button_state |= 1<<(shift+0)
 		self.button_down_t = 0
 
 	# Implement the serial protocol understood by ArduinoSerialHAL
 	# This function should be similar to the Arduino project's loop()
-	def serial_loop(self, display):
+	def process_input(self):
+		"""
+		Process control messages coming from the host as well as any
+		button presses captured.  Return button presses as input to
+		the caller (the main game loop).
+		Also takes care of waking up the host computer if the timer expired.
+		"""
+		# Wake up the host computer if necessary
 		if self.reboot_at:
 			if utime.time() > self.reboot_at:
 				self.reboot_at = 0
@@ -89,56 +120,46 @@ class PycomHAL:
 				self.suspend_host_pin(1)
 				self.suspend_host_pin.hold(True)
 
-		if not self.uart:
-			print('HAL: Disabling REPL on UART0 and switching to serial protocol')
-			idle()
-			os.dupterm(None)
-			self.uart = UART(0, 115200*8, pins=('P1', 'P0', 'P20', 'P19'))  # TX/RX/RTS/CTS on ExpBoard2
-			self.console = UART(1, 115200)
-			os.dupterm(self.console)
-			idle()
-			print('HAL: Enabled REPL on UART1')
-
+		# Process button input
 		button_state = self.button_state
 		if button_state:
-			if button_state == 1:
-				print('BUTTON_SHRT_PRESS')
-			elif button_state == 2:
-				print('BUTTON_LONG_PRESS')
+			try:
+				if button_state & 1:
+					# Notify the host about the button press in a similar manner
+					# to what ArduinoSer2FastLED does
+					self.uart.write(bytearray('LEFTB_SHRT_PRESS\n'))
+				elif button_state & 2:
+					self.uart.write(bytearray('LEFTB_LONG_PRESS\n'))
+				elif button_state & 4:
+					self.uart.write(bytearray('LEFTB_HOLD_PRESS\n'))
+				elif button_state & 16:
+					self.uart.write(bytearray('RGHTB_SHRT_PRESS\n'))
+				elif button_state & 32:
+					self.uart.write(bytearray('RGHTB_LONG_PRESS\n'))
+				elif button_state & 64:
+					self.uart.write(bytearray('RGHTB_HOLD_PRESS\n'))
+			except OSError as e:
+				print('HAL: UART write failed: {}'.format(e.args[0]))
 			self.button_state = 0
-
-		if self.enable_auto_time:
-			# TODO: Unify with main.py::RenderLoop
-			self.frame += 1
-			if not self.clock:
-				print('HAL: Initiating clock scene')
-				self.clock = ClockScene(display, self.config['ClockScene'])
-			if not self.weather:
-				self.weather = WeatherScene(display, self.config['WeatherScene'])
-				self.weather.reset()
-
-			if button_state == 1:
-				self.clock.input(0, button_state)
-			elif button_state == 2:
-				self.scene ^= 1
-				self.clear_display()
-
-			if self.scene == 0:
-				self.clock.render(self.frame, 0, 5)
-			else:
-				self.weather.render(self.frame, 0, 5)
 
 		avail = self.uart.any()
 		if not avail:
-			return
+			# No incoming data from the host, return the button state to the
+			# caller (game loop) so it can process it if self.enable_auto_time
+			# is True
+			return button_state
+
 		if avail > 256:
 			# Currently shipping releases have a 512 byte buffer
 			print('HAL: More than 256 bytes available: {}'.format(avail))
 
-		data = self.uart.readall()
-		for val in data:
+		self.uart.readinto(self.rxbuf)
+		for val in self.rxbuf:
 			if self.state == 0:
-				# reset
+				if not val:
+					# Host is trying to resynchronize
+					self.uart.write(bytearray('RESET\n'))
+					print('HAL: Reset sequence from host detected or out-of-sync')
 				self.state = val
 			elif self.state >= ord('i') and self.state <= ord('i')+1:
 				# init display
@@ -192,6 +213,7 @@ class PycomHAL:
 					self.set_auto_time(not self.enable_auto_time)
 				else:
 					self.set_auto_time(bool(val))
+				self.clear_display()
 				print('HAL: Automatic rendering of time is now: {}'.format(self.enable_auto_time))
 				self.state = 0       # reset state
 			elif self.state >= ord('@') and self.state <= ord('@')+3:
@@ -211,44 +233,48 @@ class PycomHAL:
 			else:
 				print('HAL: Unhandled state: {}'.format(self.state))
 				self.state = 0       # reset state
-
-	def readline(self):
-		"""
-		No-op in this implementation
-		"""
-		return None
+		return button_state
 
 	def reset(self):
 		print('HAL: Reset called')
-		self.chain = WS2812(ledNumber=self.num_pixels, intensity=0.5)
+		self.chain = WS2812(ledNumber=self.num_pixels)
+		gc.collect()
 
 	def init_display(self, num_pixels=256):
 		print('HAL: Initializing display with {} pixels'.format(num_pixels))
 		self.num_pixels = num_pixels
-		self.pixels = [(0,0,0) for _ in range(self.num_pixels)]
-		self.clear_display()
+		self.chain.clear()
+		self.chain.send_buf()
 
 	def clear_display(self):
-		for i in range(self.num_pixels):
-			self.pixels[i] = (0,0,0)
+		"""
+		Turn off all pixels
+		"""
+		self.chain.clear()
 		self.update_display(self.num_pixels)
 
 	def update_display(self, num_modified_pixels):
 		if not num_modified_pixels:
 			return
-		self.chain.show(self.pixels[:num_modified_pixels])
-		gc.collect()
+		self.chain.send_buf()
 
 	def put_pixel(self, addr, r, g, b):
-		self.pixels[addr % self.num_pixels] = (r,g,b)
+		"""
+		Update pixel in buffer
+		"""
+		self.chain.put_pixel(addr % self.num_pixels, r, g, b)
 
-	def set_rtc(self, t):
+	def set_rtc(self, scene):
 		# Resynchronize RTC
 		self.rtc = RTC()
 		self.rtc.ntp_sync('ntps1-1.eecsit.tu-berlin.de')
 		print('HAL: Waiting for NTP sync')
-		while not self.rtc.synced():
-			idle()
+		if type(scene) != int:
+			# Kludge: render RTC sync progress
+			frame = 0
+			while not self.rtc.synced():
+				scene.render(frame, 0, 0)
+				frame += 1
 		print('HAL: RTC synched')
 
 	def set_auto_time(self, enable=True):
@@ -256,6 +282,7 @@ class PycomHAL:
 		Enable rendering of current time without involvment from host computer
 		"""
 		self.enable_auto_time = enable
+		gc.collect()
 
 	def suspend_host(self, restart_timeout_seconds):
 		"""
@@ -269,17 +296,3 @@ class PycomHAL:
 		self.suspend_host_pin(0)
 		self.suspend_host_pin(1)
 		self.suspend_host_pin.hold(True)
-		pass
-
-if __name__ == '__main__':
-	import os
-	import time
-	p = PycomHAL()
-	p.init_display(256)
-	p.clear_display()
-	p.put_pixel(0, 8, 0, 0)
-	p.put_pixel(8, 0, 8, 0)
-	p.put_pixel(16, 0, 0, 8)
-	p.update_display(p.num_pixels)
-	time.sleep(1)
-	p.clear_display()

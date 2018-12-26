@@ -13,7 +13,8 @@
 
 
 #define HOST_SHUTDOWN_PIN 8
-#define BUTTON_PIN 12
+#define LEFT_BUTTON_PIN 9
+#define RIGHT_BUTTON_PIN 10
 #define NUM_LEDS 256
 
 #ifdef TEENSYDUINO
@@ -55,8 +56,8 @@ enum {
 /* Computed with pixelfont.py */
 static int font_width = 4;
 static int font_height = 5;
-static char font_alphabet[] = " %'-./0123456789:cms";
-static unsigned char font_data[] = "\x00\x00\x50\x24\x51\x66\x00\x00\x60\x00\x00\x00\x42\x24\x11\x57\x55\x27\x23\x72\x47\x17\x77\x64\x74\x55\x47\x74\x71\x74\x17\x57\x77\x44\x44\x57\x57\x77\x75\x74\x20\x20\x20\x15\x25\x75\x57\x75\x71\x74";
+static char font_alphabet[] = " %'-./0123456789:?acdefgiklmnoprstwxy";
+static unsigned char font_data[] = "\x00\x00\x50\x24\x51\x66\x00\x00\x60\x00\x00\x00\x42\x24\x11\x57\x55\x27\x23\x72\x47\x17\x77\x64\x74\x55\x47\x74\x71\x74\x17\x57\x77\x44\x44\x57\x57\x77\x75\x74\x20\x20\x30\x24\x20\x52\x57\x25\x15\x25\x53\x55\x73\x31\x71\x17\x13\x71\x71\x75\x27\x22\x57\x35\x55\x11\x11\x57\x77\x55\x75\x77\x75\x55\x75\x57\x17\x71\x35\x55\x17\x47\x77\x22\x22\x55\x77\x55\x25\x55\x55\x27\x02";
 
 /* Global states */
 int state = 0;
@@ -76,8 +77,8 @@ CRGB leds[NUM_LEDS];
 
 static volatile int g_button_state;
 static int button_down_t;
-static void button_irq(void) {
-  int state = digitalRead(BUTTON_PIN);
+static void button_irq_left(void) {
+  int state = digitalRead(LEFT_BUTTON_PIN);
 
   if(state == HIGH) {
     /* Start counting when the circuit is broken */
@@ -88,10 +89,34 @@ static void button_irq(void) {
     return;
 
   int pressed_for_ms = millis() - button_down_t;
-  if(pressed_for_ms > 500)
+  if(pressed_for_ms > 1500)
+    g_button_state = 4;
+  else if(pressed_for_ms > 500)
     g_button_state = 2;
   else if(pressed_for_ms > 100)
     g_button_state = 1;
+
+  button_down_t = 0;
+}
+
+static void button_irq_right(void) {
+  int state = digitalRead(RIGHT_BUTTON_PIN);
+
+  if(state == HIGH) {
+    /* Start counting when the circuit is broken */
+    button_down_t = millis();
+    return;
+  }
+  if(!button_down_t)
+    return;
+
+  int pressed_for_ms = millis() - button_down_t;
+  if(pressed_for_ms > 1500)
+    g_button_state = 64;
+  else if(pressed_for_ms > 500)
+    g_button_state = 32;
+  else if(pressed_for_ms > 100)
+    g_button_state = 16;
 
   button_down_t = 0;
 }
@@ -107,9 +132,11 @@ void setup() {
   pinMode(HOST_SHUTDOWN_PIN, OUTPUT);
   digitalWrite(HOST_SHUTDOWN_PIN, HIGH);
 
-  /* Configure pin for button */
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), button_irq, CHANGE);
+  /* Configure pins for the buttons */
+  pinMode(LEFT_BUTTON_PIN, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(LEFT_BUTTON_PIN), button_irq_left, CHANGE);
+  pinMode(RIGHT_BUTTON_PIN, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(RIGHT_BUTTON_PIN), button_irq_right, CHANGE);
 
 #ifdef TEENSYDUINO
   /* Initialize time library */
@@ -130,17 +157,25 @@ void loop() {
 #ifdef TEENSYDUINO
   time_t now = getTeensy3Time();
 #else
-  int now = 42;
+  int now = 0;
 #endif
 
   int button_state = g_button_state;
   if(button_state) {
     g_button_state = 0;
 
-    if(button_state == 1)
-      Serial.println("BUTTON_SHRT_PRESS");
-    else
-      Serial.println("BUTTON_LONG_PRESS");
+    if(button_state & 1)
+      Serial.println("LEFT_SHRT_PRESS");
+    else if(button_state & 2)
+      Serial.println("LEFT_LONG_PRESS");
+    else if(button_state & 4)
+      Serial.println("LEFT_HOLD_PRESS");
+    if(button_state & 16)
+      Serial.println("RGHT_SHRT_PRESS");
+    else if(button_state & 32)
+      Serial.println("RGHT_LONG_PRESS");
+    else if(button_state & 64)
+      Serial.println("RGHT_HOLD_PRESS");
   }
 
   if(reboot_at && now >= reboot_at) {
@@ -158,7 +193,7 @@ void loop() {
       show_time = now;
     }
   }
-  
+
   if (Serial.available() <= 0) return;
   int val = Serial.read();
   last_states[last_state_counter++ % (sizeof(last_states)/sizeof(last_states[0]))] = val;
@@ -238,6 +273,12 @@ void loop() {
       show_time = !show_time; /* toggle */
     else
       show_time = val;
+
+    /* Clear display */
+    for(int i = 0; i < NUM_LEDS; i++)
+      leds[i].setRGB(0,0,0);
+    FastLED.show();
+
     Serial.printf("Automatic rendering of current time: %d\n", show_time);
     state = FUNC_RESET;
     break;
@@ -358,7 +399,7 @@ static void render_clock(int button_state) {
           put_pixel(x_off+x, y, 255);
         else
           put_pixel(x_off+x, y, 0);
-          
+
         if(++font_bit == 8) {
           font_byte++;
           font_bit = 0;

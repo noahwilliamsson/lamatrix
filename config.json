@@ -1,22 +1,54 @@
 {
-  "ssid":"yourWiFiSSID",
-  "password":"yourWiFiPassword",
+  "networks": [
+    {
+      "ssid":"yourWiFiSSID",
+      "password":"yourWiFiPassword"
+    },
+    {
+      "ssid":"otherWiFiSSID",
+      "password":"otherWiFiPassword"
+    }
+  ],
   "port": "/dev/ttyACM0",
-  "baudrate": 921600,
+  "baudrate": 115200,
+  "remapConsole": false,
+  "sceneTimeout": 40,
   "tzOffsetSeconds": 3600,
-  "AnimationScene": {
-    "files": [
-      "animations/game-pingpong.json",
-      "animations/matrix.json",
-      "animations/newyears.json",
-      "animations/tv-movie.json"
+  "LedMatrix": {
+    "debug": false,
+    "columns": 32,
+    "stride": 8,
+    "fps": 10
+  },
+  "Boot": {
+    "intensity": 0.03
+  },
+  "Animation": {
+    "intensity": 0.05,
+    "debug": false,
+    "icons": [
+        "icons/game-tetris.bin",
+        "icons/game-pingpong.bin",
+        "icons/newyears.bin",
+        "icons/matrix.bin",
+        "icons/game-invaders-1.bin",
+        "icons/game-invaders-2.bin",
+        "icons/tv-movie.bin"
     ]
   },
-  "ClockScene": {
+  "Clock": {
+    "intensity": 0.05,
+    "debug": true
   },
-  "DemoScene": {
+  "disabledDemo": {
+    "intensity": 0.05
   },
-  "WeatherScene": {
+  "Fire": {
+    "intensity": 0.05
+  },
+  "Weather": {
+    "intensity": 0.05,
+    "debug": true,
     "lat": 59.3293,
     "lon": 18.0686
   }

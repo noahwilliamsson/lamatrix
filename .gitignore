@@ -1,4 +1,5 @@
 **/*.json
+**/*.bin
 *~
 *.swp
 *.pyc

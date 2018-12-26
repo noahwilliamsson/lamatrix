@@ -7,6 +7,7 @@
 # or under MicroPython.
 #
 import serial
+import time
 
 class ArduinoSerialHAL:
 	"""
@@ -17,12 +18,15 @@ class ArduinoSerialHAL:
 	def __init__(self, config):
 		self.port = config['port']
 		self.baudrate = config['baudrate']
+		self.tz_adjust = config['tzOffsetSeconds']
 		self.ser = None  # initialized in reset()
 		self.reset()
 
-	def readline(self):
+	def process_input(self):
 		"""
-		Read output from MCU over the serial link
+		Process data coming from the MCU over the serial link, such as any
+		captured button presses by the firmware or log messages, and return
+		it as input data to the caller (the main game loop)
 		"""
 		if not self.ser.in_waiting:
 			return None
@@ -39,6 +43,7 @@ class ArduinoSerialHAL:
 		print('SerialProtocol: opening port {} @ {} baud'.format(self.port, self.baudrate))
 		self.ser = serial.Serial(self.port, baudrate=self.baudrate, rtscts=True, timeout=0.1, write_timeout=0.5)
 		self.resynchronize_protocol()
+		self.set_rtc(int(time.time()) + self.tz_adjust)
 
 	def resynchronize_protocol(self):
 		"""

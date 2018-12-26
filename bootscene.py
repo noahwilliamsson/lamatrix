@@ -1,7 +1,11 @@
+from network import WLAN
+from machine import RTC
 from pixelfont import PixelFont
 
-class DemoScene:
-	"""This module implements an example scene with a traveling pixel"""
+class BootScene:
+	"""
+	This module implements a boot scene for Pycom modules
+	"""
 
 	def __init__(self, display, config):
 		"""
@@ -10,11 +14,14 @@ class DemoScene:
 		update the display via self.display.put_pixel() and .render()
 		"""
 		self.display = display
-		self.intensity = 32
-		self.x_pos = 0
-		self.text = 'example'
+		self.debug = False
+		self.intensity = 16
+		self.rtc = RTC()
+		self.wlan = WLAN()
 		if not config:
 			return
+		if 'debug' in config:
+			self.debug = config['debug']
 		if 'intensity' in config:
 			self.intensity = int(round(config['intensity']*255))
 
@@ -23,15 +30,7 @@ class DemoScene:
 		This method is called before transitioning to this scene.
 		Use it to (re-)initialize any state necessary for your scene.
 		"""
-		self.x_pos = 0
-		print('DemoScene: here we go')
-
-	def input(self, button_state):
-		"""
-		Handle button input
-		"""
-		print('DemoScene: button state: {}'.format(button_state))
-		return 0  # signal that we did not handle the input
+		pass
 
 	def set_intensity(self, value=None):
 		if value is not None:
@@ -39,6 +38,12 @@ class DemoScene:
 			if not self.intensity:
 				self.intensity = 16
 		return self.intensity
+
+	def input(self, button_state):
+		"""
+		Handle button input
+		"""
+		return 0  # signal that we did not handle the input
 
 	def render(self, frame, dropped_frames, fps):
 		"""
@@ -48,23 +53,18 @@ class DemoScene:
 		requested frames per second (FPS).
 		"""
 
-		if (frame % fps) == 0:
-			# Only update pixel once every second
-			return True
+		dots = str('.' * ((frame % 3) + 1))
+		if not self.wlan.isconnected():
+			if not frame:
+				dots = '?'
+			text = 'wifi{}'.format(dots)
+		elif not self.rtc.synced():
+			text = 'clock{}'.format(dots)
+		else:
+			text = 'loading'
 
 		display = self.display
 		intensity = self.intensity
-
-		dot_x, dot_y = self.x_pos, 0
-		text_x, text_y = 2, 2
-		color = intensity
-		display.clear()
-		display.put_pixel(dot_x, dot_y, color, color, color >> 1)
-		display.render_text(PixelFont, self.text, text_x, text_y, self.intensity)
+		display.render_text(PixelFont, text, 1, 1, intensity)
 		display.render()
-
-		self.x_pos += 1
-		if self.x_pos == display.columns:
-			return False   # signal that our work is done
-
-		return True   # we want to be called again
+		return True
