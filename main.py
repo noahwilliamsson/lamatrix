@@ -36,12 +36,18 @@ if hasattr(sys,'implementation') and sys.implementation.name == 'micropython':
 	tmp = None
 	del uname
 else:
-	# Emulate https://docs.pycom.io/firmwareapi/micropython/utime.html
-	time.ticks_ms = lambda: int(time.time() * 1000)
 	import json
 	import os
 	import signal
-	from arduinoserialhal import ArduinoSerialHAL as HAL
+	# Kludge to allow this project to be used with a Raspberry Pi instead of
+	# an MCU: see https://github.com/noahwilliamsson/lamatrix/issues/1
+	try:
+		# If the rpi_ws281x Python module is available, then use that...
+		from raspberrypihal import RaspberryPiHAL as HAL
+	except:
+		# ...else assume that there's an MCU (driving the display) connected
+		# to a serial port
+		from arduinoserialhal import ArduinoSerialHAL as HAL
 
 gc.collect()
 from renderloop import RenderLoop
