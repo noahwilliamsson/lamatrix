@@ -95,7 +95,7 @@ class AnimationScene:
 		"""
 		Load icon into first available slot
 		"""
-		cols = bytearray(' ' * 32)
+		cols = bytearray(b' ' * 32)
 		icon_width = 8
 		padding = 1 if self.display.columns == 32 else 0
 		for state in self.on_screen_icons:

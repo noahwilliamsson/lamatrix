@@ -96,7 +96,7 @@ if __name__ == '__main__':
 	print('width = {}'.format(font_width))
 	print('height = {}'.format(font_height))
 	print('alphabet = "{}"'.format(font_alphabet))
-	print('data = bytearray("{}")'.format("".join("\\x{:02x}".format(x) for x in data)))
+	print('data = bytearray(b"{}")'.format("".join("\\x{:02x}".format(x) for x in data)))
 	print('')
 	print('/* Computed with pixelfont.py */')
 	print('static int font_width = {};'.format(font_width))

@@ -1,4 +1,7 @@
-from uos import urandom
+try:
+	from uos import urandom
+except:
+	from os import urandom
 from pixelfont import PixelFont
 
 class FireScene:
@@ -70,7 +73,10 @@ class FireScene:
 					put_pixel(x, y, max(r, 0), max(g, 0), b)
 				# Spread heat from below
 				r, g, b = get_pixel(x, y+1)
-				spread = (urandom(1)[0]&3) - 1
+				try:
+					spread = (urandom(1)[0]&3) - 1
+				except TypeError:
+					spread = (ord(urandom(1)[0])&3) - 1
 				r -= spread
 				g -= 1
 				b >>= 2

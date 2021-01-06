@@ -3,7 +3,7 @@ import time
 import gc
 from math import ceil
 
-if not hasattr(time, 'ticks_ms'):
+if not hasattr(time, 'sleep_ms') or not hasattr(time, 'ticks_ms'):
 	# Emulate https://docs.pycom.io/firmwareapi/micropython/utime.html
 	time.ticks_ms = lambda: int(time.time() * 1000)
 	time.sleep_ms = lambda x: time.sleep(x/1000.0)
