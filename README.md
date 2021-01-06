@@ -30,7 +30,7 @@
 
 This is a project to drive a 32x8 or 16x16 LED matrix based on the popular WS2812 RGB LEDs using a microcontroller running [MicroPython](https://micropython.org).  There is experimental support for allowing a more powerful host computer (e.g. a Raspberry Pi Zero W) to remotely control a microcontroller without WiFi (e.g. a Teensy 3.x) and the display connected to it over USB serial.  Low FPS video of a standalone Pycom LoPy 1 development board cycling through the scenes:
 
-TODO: implement![LED matrix animated](docs/lamatrix.gif)
+![LED matrix animated](docs/lamatrix.gif)
 
 Static picture with clock scene.  For some reason the colors aren't captured as vidvid as they are in real life.
 
