@@ -43,6 +43,6 @@ for filename in sys.argv[1:]:
 			for x in range(len(row)):
 				column = row[x]
 				for color in range(min(len(column), 3)):
-					f.write(struct.pack('B', 255*column[color]))
+					f.write(struct.pack('B', int(255*column[color])))
 	f.close()
 	print('Created {} from {}'.format(out_filename, filename))
